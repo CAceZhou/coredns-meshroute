@@ -9,6 +9,10 @@ on:
 permissions:
   contents: read
 
+concurrency:
+  group: build-${{ github.workflow }}-${{ github.sha }}
+  cancel-in-progress: true
+
 jobs:
   test:
     runs-on: ubuntu-latest
@@ -24,22 +28,6 @@ jobs:
   coredns:
     needs: test
     runs-on: ubuntu-latest
-    strategy:
-      fail-fast: false
-      matrix:
-        include:
-          - goos: linux
-            goarch: amd64
-            output: coredns-linux-amd64
-          - goos: linux
-            goarch: arm64
-            output: coredns-linux-arm64
-          - goos: windows
-            goarch: amd64
-            output: coredns-windows-amd64.exe
-          - goos: darwin
-            goarch: arm64
-            output: coredns-darwin-arm64
     steps:
       - uses: actions/checkout@v4
       - uses: actions/checkout@v4
@@ -59,15 +47,17 @@ jobs:
           go mod edit -require=github.com/CAceZhou/coredns-meshroute@v0.0.0
           go mod edit -replace=github.com/CAceZhou/coredns-meshroute=${GITHUB_WORKSPACE}
           go mod tidy
-      - name: Build CoreDNS
+      - name: Build CoreDNS targets
         working-directory: coredns
-        env:
-          CGO_ENABLED: "0"
-          GOOS: ${{ matrix.goos }}
-          GOARCH: ${{ matrix.goarch }}
-        run: go build -trimpath -ldflags="-s -w" -o ../dist/${{ matrix.output }} .
+        run: |
+          mkdir -p ../dist
+          CGO_ENABLED=0 GOOS=linux GOARCH=amd64 go build -trimpath -ldflags="-s -w" -o ../dist/coredns-linux-amd64 .
+          CGO_ENABLED=0 GOOS=linux GOARCH=arm64 go build -trimpath -ldflags="-s -w" -o ../dist/coredns-linux-arm64 .
+          CGO_ENABLED=0 GOOS=windows GOARCH=amd64 go build -trimpath -ldflags="-s -w" -o ../dist/coredns-windows-amd64.exe .
+          CGO_ENABLED=0 GOOS=darwin GOARCH=arm64 go build -trimpath -ldflags="-s -w" -o ../dist/coredns-darwin-arm64 .
       - uses: actions/upload-artifact@v4
         with:
-          name: ${{ matrix.output }}
-          path: dist/${{ matrix.output }}
+          name: coredns-${{ github.sha }}
+          path: dist/*
           if-no-files-found: error
+          retention-days: 7

@@ -10,7 +10,7 @@ permissions:
   contents: read
 
 concurrency:
-  group: build-${{ github.workflow }}-${{ github.sha }}
+  group: build-${{ github.workflow }}
   cancel-in-progress: true
 
 jobs:
@@ -18,10 +18,7 @@ jobs:
     runs-on: ubuntu-latest
     steps:
       - uses: actions/checkout@v4
-      - uses: actions/setup-go@v5
-        with:
-          go-version: "1.25.x"
-          cache: true
+      - run: go version
       - run: go test ./...
       - run: go vet ./...
 
@@ -35,10 +32,7 @@ jobs:
           repository: coredns/coredns
           ref: v1.14.6
           path: coredns
-      - uses: actions/setup-go@v5
-        with:
-          go-version: "1.25.x"
-          cache: true
+      - run: go version
       - name: Register plugin
         working-directory: coredns
         run: |

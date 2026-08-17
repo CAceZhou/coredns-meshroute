@@ -42,3 +42,34 @@ func TestServeDNSReturnsBestCandidate(t *testing.T) {
 		t.Fatalf("answer=%#v", writer.msg.Answer)
 	}
 }
+
+func TestServeDNSSeparatesIPv4AndIPv6Routes(t *testing.T) {
+	v4 := Route{Domain: "fdrs.example.", Family: 4, Candidates: []Candidate{{"a", net.ParseIP("192.0.2.1")}, {"b", net.ParseIP("192.0.2.2")}}, Metric: MetricLoss, Aggregate: AggregateAvg, Selection: SelectMin, TTL: 5}
+	v6 := Route{Domain: "fdrs.example.", Family: 6, Candidates: []Candidate{{"a", net.ParseIP("2001:db8::1")}, {"b", net.ParseIP("2001:db8::2")}}, Metric: MetricLoss, Aggregate: AggregateAvg, Selection: SelectMin, TTL: 5}
+	store := NewMemoryStore()
+	store.SetLocal(NodeState{NodeID: "a", Version: 1, Healthy: true, Observations: map[string]Observation{v4.Key(): {Values: []float64{.2}}, v6.Key(): {Values: []float64{.1}}}})
+	store.Merge([]NodeState{{NodeID: "b", Version: 1, Healthy: true, Observations: map[string]Observation{v4.Key(): {Values: []float64{.1}}, v6.Key(): {Values: []float64{.2}}}}})
+	handler := &MeshRoute{cfg: Config{Routes: []Route{v4, v6}, Timeout: time.Minute}, service: &Service{store: store}}
+	for _, test := range []struct {
+		qtype uint16
+		want  string
+	}{{dns.TypeA, "192.0.2.2"}, {dns.TypeAAAA, "2001:db8::1"}} {
+		request := new(dns.Msg)
+		request.SetQuestion("fdrs.example.", test.qtype)
+		writer := new(captureWriter)
+		rcode, err := handler.ServeDNS(context.Background(), writer, request)
+		if err != nil || rcode != dns.RcodeSuccess {
+			t.Fatalf("type=%d rcode=%d err=%v", test.qtype, rcode, err)
+		}
+		got := ""
+		switch answer := writer.msg.Answer[0].(type) {
+		case *dns.A:
+			got = answer.A.String()
+		case *dns.AAAA:
+			got = answer.AAAA.String()
+		}
+		if got != test.want {
+			t.Errorf("type=%d got=%s want=%s", test.qtype, got, test.want)
+		}
+	}
+}

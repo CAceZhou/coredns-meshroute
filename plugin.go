@@ -48,7 +48,13 @@ func (m *MeshRoute) ServeDNS(ctx context.Context, w dns.ResponseWriter, r *dns.M
 	qname := normalizeDomain(r.Question[0].Name)
 	var route *Route
 	for i := range m.cfg.Routes {
-		if m.cfg.Routes[i].Domain == qname {
+		qFamily := 0
+		if r.Question[0].Qtype == dns.TypeA {
+			qFamily = 4
+		} else if r.Question[0].Qtype == dns.TypeAAAA {
+			qFamily = 6
+		}
+		if m.cfg.Routes[i].Domain == qname && (m.cfg.Routes[i].Family == 0 || m.cfg.Routes[i].Family == qFamily) {
 			route = &m.cfg.Routes[i]
 			break
 		}

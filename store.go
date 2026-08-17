@@ -62,7 +62,7 @@ func (s *MemoryStore) Best(route Route, now time.Time, timeout time.Duration) (C
 		if !ok || !st.Healthy || now.Sub(st.ReceivedAt) > timeout {
 			continue
 		}
-		obs, ok := st.Observations[route.Domain]
+		obs, ok := st.Observations[route.Key()]
 		if !ok || obs.Error != "" {
 			continue
 		}

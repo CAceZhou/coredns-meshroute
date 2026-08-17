@@ -39,6 +39,7 @@ type Candidate struct {
 }
 type Route struct {
 	Domain     string
+	Family     int
 	Candidates []Candidate
 	Source     string
 	Target     string
@@ -48,6 +49,24 @@ type Route struct {
 	Selection  Selection
 	TTL        uint32
 	Fallback   net.IP
+	Weighted   *WeightedSpec
+}
+
+type WeightedSpec struct {
+	TargetCIDR   *net.IPNet
+	Ports        []uint16
+	TargetWeight float64
+	PublicWeight float64
+}
+
+func (r Route) Key() string {
+	if r.Family == 4 {
+		return r.Domain + "|ipv4"
+	}
+	if r.Family == 6 {
+		return r.Domain + "|ipv6"
+	}
+	return r.Domain
 }
 
 type Observation struct {

@@ -64,3 +64,22 @@ func TestConnectionRouteRequiresMetricsAPI(t *testing.T) {
 		t.Fatal("connection route without tcpmetrics API accepted")
 	}
 }
+
+func TestParseDualStackWeightedRoutes(t *testing.T) {
+	c := caddy.NewTestController("dns", `meshroute {
+        node node1 198.18.1.122 fdfe:dcba:9876::173
+        peer node2 https://node2.solitarymc.top:9166
+        tls node.crt node.key ca.crt
+        hmac 0123456789abcdef0123456789abcdef
+        tcpmetrics https://127.0.0.1:9165 0123456789abcdef ca.crt
+        weighted_route fdrs.solitarymc.top ipv4 node1=198.18.1.122,node2=198.18.1.123 target_cidr=10.0.0.0/16 ports=25565,25566 target_weight=0.6 public_weight=0.4 select=min ttl=5
+        weighted_route fdrs.solitarymc.top ipv6 node1=fdfe:dcba:9876::173,node2=fdfe:dcba:9876::174 target_cidr=10.0.0.0/16 ports=25565,25566 target_weight=0.6 public_weight=0.4 select=min ttl=5
+    }`)
+	cfg, err := parse(c)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if cfg.NodeIPv4 == nil || cfg.NodeIPv6 == nil || len(cfg.Routes) != 2 || cfg.Routes[0].Key() == cfg.Routes[1].Key() {
+		t.Fatalf("unexpected config: %#v", cfg)
+	}
+}

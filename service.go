@@ -94,11 +94,14 @@ func (s *Service) publish(ctx context.Context) {
 	s.version++
 	observations := make(map[string]Observation, len(s.cfg.Routes))
 	for _, route := range s.cfg.Routes {
-		observations[route.Domain] = s.observe(ctx, route)
+		observations[route.Key()] = s.observe(ctx, route)
 	}
 	s.store.SetLocal(NodeState{NodeID: s.cfg.NodeID, IP: s.cfg.NodeIP.String(), Version: s.version, UpdatedAt: time.Now().UTC(), Healthy: true, Observations: observations})
 }
 func (s *Service) observe(ctx context.Context, route Route) Observation {
+	if route.Weighted != nil {
+		return s.observeWeighted(ctx, route)
+	}
 	if route.Source == "probe" {
 		duration, err := s.probe.Measure(ctx, route.Target)
 		if err != nil {
@@ -109,7 +112,7 @@ func (s *Service) observe(ctx context.Context, route Route) Observation {
 	if s.metrics == nil {
 		return Observation{Error: "tcpmetrics client is not configured"}
 	}
-	connections, err := s.metrics.Connections(ctx, route.Target)
+	connections, err := s.metrics.Connections(ctx, ConnectionFilter{Match: route.Target})
 	if err != nil {
 		return Observation{Error: err.Error()}
 	}
@@ -129,6 +132,79 @@ func (s *Service) observe(ctx context.Context, route Route) Observation {
 		return Observation{Error: "no matching TCP connections"}
 	}
 	return Observation{Values: values}
+}
+
+func (s *Service) observeWeighted(ctx context.Context, route Route) Observation {
+	if s.metrics == nil {
+		return Observation{Error: "tcpmetrics client is not configured"}
+	}
+	spec := route.Weighted
+	target, err := s.metrics.Connections(ctx, ConnectionFilter{Family: 4, State: "ESTABLISHED", RemotePorts: spec.Ports, RemoteCIDR: spec.TargetCIDR.String()})
+	if err != nil {
+		return Observation{Error: err.Error()}
+	}
+	publicConnections, err := s.metrics.Connections(ctx, ConnectionFilter{Family: route.Family, State: "ESTABLISHED", LocalPorts: spec.Ports})
+	if err != nil {
+		return Observation{Error: err.Error()}
+	}
+	public := publicConnections[:0]
+	for _, connection := range publicConnections {
+		if isPublicRemote(connection.RemoteAddress, route.Family) {
+			public = append(public, connection)
+		}
+	}
+	targetScore, hasTarget := equalPortLoss(target, spec.Ports, false)
+	publicScore, hasPublic := equalPortLoss(public, spec.Ports, true)
+	weighted, ok := reweightedScore(targetScore, hasTarget, spec.TargetWeight, publicScore, hasPublic, spec.PublicWeight)
+	if !ok {
+		return Observation{Error: "no target-network or public-client TCP samples"}
+	}
+	return Observation{Values: []float64{weighted}}
+}
+
+func equalPortLoss(connections []TCPConnection, ports []uint16, local bool) (float64, bool) {
+	var portMeans []float64
+	for _, port := range ports {
+		var sum float64
+		count := 0
+		for _, connection := range connections {
+			selected := connection.RemotePort
+			if local {
+				selected = connection.LocalPort
+			}
+			if selected == port {
+				sum += connection.LossRate
+				count++
+			}
+		}
+		if count > 0 {
+			portMeans = append(portMeans, sum/float64(count))
+		}
+	}
+	if len(portMeans) == 0 {
+		return 0, false
+	}
+	sum := 0.0
+	for _, mean := range portMeans {
+		sum += mean
+	}
+	return sum / float64(len(portMeans)), true
+}
+
+func reweightedScore(a float64, hasA bool, weightA float64, b float64, hasB bool, weightB float64) (float64, bool) {
+	weighted, total := 0.0, 0.0
+	if hasA && weightA > 0 {
+		weighted += a * weightA
+		total += weightA
+	}
+	if hasB && weightB > 0 {
+		weighted += b * weightB
+		total += weightB
+	}
+	if total == 0 {
+		return 0, false
+	}
+	return weighted / total, true
 }
 func (s *Service) broadcast(ctx context.Context) {
 	snapshot := Snapshot{Sender: s.cfg.NodeID, States: s.store.Snapshot()}

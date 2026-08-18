@@ -114,7 +114,23 @@ func fetchPublicIP(ctx context.Context, family int) string {
 	if family == 6 {
 		endpoints = []string{"https://api6.ipify.org", "https://v6.ident.me", "https://ifconfig.co/ip"}
 	}
-	client := &http.Client{Timeout: 3 * time.Second}
+	resolver := &net.Resolver{PreferGo: true, Dial: func(ctx context.Context, network, _ string) (net.Conn, error) {
+		return (&net.Dialer{Timeout: 2 * time.Second}).DialContext(ctx, "udp4", "1.1.1.1:53")
+	}}
+	transport := &http.Transport{DialContext: func(dialCtx context.Context, _, address string) (net.Conn, error) {
+		host, port, err := net.SplitHostPort(address)
+		if err != nil { return nil, err }
+		ips, err := resolver.LookupIP(dialCtx, "ip", host)
+		if err != nil { return nil, err }
+		for _, ip := range ips {
+			if family == 4 && ip.To4() == nil { continue }
+			if family == 6 && (ip.To4() != nil || ip.To16() == nil) { continue }
+			conn, err := (&net.Dialer{Timeout: 3 * time.Second}).DialContext(dialCtx, "tcp", net.JoinHostPort(ip.String(), port))
+			if err == nil { return conn, nil }
+		}
+		return nil, fmt.Errorf("no IPv%d address for %s", family, host)
+	}}
+	client := &http.Client{Timeout: 5 * time.Second, Transport: transport}
 	for _, endpoint := range endpoints {
 		req, err := http.NewRequestWithContext(ctx, http.MethodGet, endpoint, nil); if err != nil { continue }
 		if family == 4 { req.Header.Set("User-Agent", "ddns-go/meshroute-ipv4") } else { req.Header.Set("User-Agent", "ddns-go/meshroute-ipv6") }

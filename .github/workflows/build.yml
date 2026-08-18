@@ -32,13 +32,21 @@ jobs:
           repository: coredns/coredns
           ref: v1.14.6
           path: coredns
+      - uses: actions/checkout@v4
+        with:
+          repository: CAceZhou/coredns-tcpmetrics
+          ref: main
+          path: coredns-tcpmetrics
       - run: go version
       - name: Register plugin
         working-directory: coredns
         run: |
+          sed -i '/^forward:forward/i tcpmetrics:github.com/CAceZhou/coredns-tcpmetrics' plugin.cfg
           sed -i '/^forward:forward/i meshroute:github.com/CAceZhou/coredns-meshroute' plugin.cfg
           go generate
+          go mod edit -require=github.com/CAceZhou/coredns-tcpmetrics@v0.0.0
           go mod edit -require=github.com/CAceZhou/coredns-meshroute@v0.0.0
+          go mod edit -replace=github.com/CAceZhou/coredns-tcpmetrics=${GITHUB_WORKSPACE}/coredns-tcpmetrics
           go mod edit -replace=github.com/CAceZhou/coredns-meshroute=${GITHUB_WORKSPACE}
           go mod tidy
       - name: Build CoreDNS targets

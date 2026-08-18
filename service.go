@@ -50,6 +50,7 @@ func newServiceWithDependencies(cfg Config, store *MemoryStore, probe Probe, met
 func (s *Service) Start() error {
 	ctx, cancel := context.WithCancel(context.Background())
 	s.cancel = cancel
+	s.version = uint64(time.Now().UTC().UnixNano())
 	s.publish(ctx)
 	if err := s.transport.Start(s.routes()); err != nil {
 		cancel()

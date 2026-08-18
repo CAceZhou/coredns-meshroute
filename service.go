@@ -121,6 +121,9 @@ func fetchPublicIP(ctx context.Context, family int) string {
 		host, port, err := net.SplitHostPort(address)
 		if err != nil { return nil, err }
 		ips, err := resolver.LookupIP(dialCtx, "ip", host)
+		if err != nil {
+			ips, err = net.DefaultResolver.LookupIP(dialCtx, "ip", host)
+		}
 		if err != nil { return nil, err }
 		for _, ip := range ips {
 			if family == 4 && ip.To4() == nil { continue }

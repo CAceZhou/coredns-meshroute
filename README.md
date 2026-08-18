@@ -131,6 +131,14 @@ route api.example.net node1=203.0.113.10,node2=203.0.113.11 connection ^.*:443.*
 go run ./cmd/fdrs-bundle -out dist/fdrs-dual-node
 ~~~
 
+如节点使用不同的 IPv4 地址，可通过参数写入节点配置和证书 SAN：
+
+~~~bash
+go run ./cmd/fdrs-bundle -force -out dist/fdrs-dual-node \\
+  -node1-ipv4 10.144.144.101 -node2-ipv4 10.144.144.100 \\
+  -node1-peer 10.144.144.100 -node2-peer 10.144.144.101
+~~~
+
 生成后的敏感文件位于 dist/fdrs-dual-node/ca/，该目录已被 Git 忽略。不要把它上传到 GitHub、对象存储或聊天记录。
 
 FDRS 规则：

@@ -21,12 +21,16 @@ import (
 	"time"
 )
 
-type node struct{ ID, Domain, IPv4, IPv6, PeerID, PeerDomain string }
+type node struct{ ID, Domain, IPv4, IPv6, PeerID, PeerDomain, PeerIPv4 string }
 
 func main() {
 	out := flag.String("out", "dist/fdrs-dual-node", "output directory")
 	force := flag.Bool("force", false, "allow writing into an existing directory")
 	checksumsOnly := flag.Bool("checksums-only", false, "refresh checksums.sha256 in an existing bundle")
+	node1IPv4 := flag.String("node1-ipv4", "198.18.1.122", "node1 IPv4 address")
+	node2IPv4 := flag.String("node2-ipv4", "198.18.1.123", "node2 IPv4 address")
+	node1Peer := flag.String("node1-peer", "node2.solitarymc.top", "node1 peer host or IPv4 address")
+	node2Peer := flag.String("node2-peer", "node1.solitarymc.top", "node2 peer host or IPv4 address")
 	flag.Parse()
 	if *checksumsOnly {
 		must(writeChecksums(*out))
@@ -45,7 +49,13 @@ func main() {
 	writePEM(filepath.Join(*out, "ca", "ca.crt"), "CERTIFICATE", caDER, 0644)
 	writeECKey(filepath.Join(*out, "ca", "ca.key"), caKey)
 	hmacKey := randomHex(32)
-	nodes := []node{{"node1", "node1.solitarymc.top", "198.18.1.122", "fdfe:dcba:9876::173", "node2", "node2.solitarymc.top"}, {"node2", "node2.solitarymc.top", "198.18.1.123", "fdfe:dcba:9876::174", "node1", "node1.solitarymc.top"}}
+	if net.ParseIP(*node1IPv4) == nil || net.ParseIP(*node1IPv4).To4() == nil {
+		fatalf("invalid node1 IPv4 address %q", *node1IPv4)
+	}
+	if net.ParseIP(*node2IPv4) == nil || net.ParseIP(*node2IPv4).To4() == nil {
+		fatalf("invalid node2 IPv4 address %q", *node2IPv4)
+	}
+	nodes := []node{{"node1", "node1.solitarymc.top", *node1IPv4, "fdfe:dcba:9876::173", "node2", *node1Peer, *node2IPv4}, {"node2", "node2.solitarymc.top", *node2IPv4, "fdfe:dcba:9876::174", "node1", *node2Peer, *node1IPv4}}
 	var secrets strings.Builder
 	fmt.Fprintf(&secrets, "mesh_hmac=%s\n", hmacKey)
 	for _, n := range nodes {
@@ -61,6 +71,10 @@ func main() {
 func generateNode(root string, n node, token, hmacKey string, ca *x509.Certificate, caKey *ecdsa.PrivateKey, caDER []byte, now time.Time) {
 	dir := filepath.Join(root, n.ID, "tls")
 	must(os.MkdirAll(dir, 0700))
+	candidate1, candidate2 := n.IPv4, n.PeerIPv4
+	if n.ID == "node2" {
+		candidate1, candidate2 = n.PeerIPv4, n.IPv4
+	}
 	key := newKey()
 	template := &x509.Certificate{SerialNumber: serial(), Subject: pkix.Name{CommonName: n.Domain}, DNSNames: []string{n.Domain}, IPAddresses: []net.IP{net.ParseIP(n.IPv4), net.ParseIP(n.IPv6), net.ParseIP("127.0.0.1"), net.ParseIP("::1")}, NotBefore: now.Add(-5 * time.Minute), NotAfter: now.AddDate(2, 3, 0), KeyUsage: x509.KeyUsageDigitalSignature, ExtKeyUsage: []x509.ExtKeyUsage{x509.ExtKeyUsageServerAuth, x509.ExtKeyUsageClientAuth}}
 	der, err := x509.CreateCertificate(rand.Reader, template, ca, &key.PublicKey, caKey)
@@ -68,7 +82,7 @@ func generateNode(root string, n node, token, hmacKey string, ca *x509.Certifica
 	writePEM(filepath.Join(dir, n.ID+".crt"), "CERTIFICATE", der, 0644)
 	writeECKey(filepath.Join(dir, n.ID+".key"), key)
 	writePEM(filepath.Join(dir, "ca.crt"), "CERTIFICATE", caDER, 0644)
-	corefile := fmt.Sprintf(corefileTemplate, n.ID, n.IPv4, n.IPv6, n.ID, n.ID, n.PeerID, n.PeerDomain, n.ID, n.ID, hmacKey, token)
+	corefile := fmt.Sprintf(corefileTemplate, n.ID, n.IPv4, n.IPv6, n.ID, n.ID, n.PeerID, n.PeerDomain, n.ID, n.ID, hmacKey, token, candidate1, candidate2)
 	must(os.WriteFile(filepath.Join(root, n.ID, "Corefile"), []byte(corefile), 0600))
 }
 
@@ -91,7 +105,7 @@ const corefileTemplate = `. {
         timeout 15s
         probe_timeout 2s
 
-        weighted_route fdrs.solitarymc.top ipv4 node1=198.18.1.122,node2=198.18.1.123 target_cidr=10.0.0.0/16 ports=25565,25566 target_weight=0.6 public_weight=0.4 select=min ttl=5
+        weighted_route fdrs.solitarymc.top ipv4 node1=%[12]s,node2=%[13]s target_cidr=10.0.0.0/16 ports=25565,25566 target_weight=0.6 public_weight=0.4 select=min ttl=5
         weighted_route fdrs.solitarymc.top ipv6 node1=fdfe:dcba:9876::173,node2=fdfe:dcba:9876::174 target_cidr=10.0.0.0/16 ports=25565,25566 target_weight=0.6 public_weight=0.4 select=min ttl=5
     }
 

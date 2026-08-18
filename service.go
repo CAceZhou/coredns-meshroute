@@ -115,7 +115,7 @@ func fetchPublicIP(ctx context.Context, family int) string {
 		endpoints = []string{"https://api6.ipify.org", "https://v6.ident.me", "https://ifconfig.co/ip"}
 	}
 	resolver := &net.Resolver{PreferGo: true, Dial: func(ctx context.Context, network, _ string) (net.Conn, error) {
-		return (&net.Dialer{Timeout: 2 * time.Second}).DialContext(ctx, "udp4", "1.1.1.1:53")
+		return (&net.Dialer{Timeout: 2 * time.Second}).DialContext(ctx, "udp4", "114.114.114.114:53")
 	}}
 	transport := &http.Transport{DialContext: func(dialCtx context.Context, _, address string) (net.Conn, error) {
 		host, port, err := net.SplitHostPort(address)

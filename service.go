@@ -110,7 +110,10 @@ func (s *Service) publicIPs(ctx context.Context) (string, string) {
 func ipString(ip net.IP) string { if ip == nil { return "" }; return ip.String() }
 
 func fetchPublicIP(ctx context.Context, family int) string {
-	endpoints := []string{"https://api.ipify.org", "https://ifconfig.me/ip", "https://icanhazip.com"}
+	endpoints := []string{"https://api.ipify.org", "https://v4.ident.me", "https://ifconfig.me/ip", "https://icanhazip.com"}
+	if family == 6 {
+		endpoints = []string{"https://api6.ipify.org", "https://v6.ident.me", "https://ifconfig.co/ip"}
+	}
 	client := &http.Client{Timeout: 3 * time.Second}
 	for _, endpoint := range endpoints {
 		req, err := http.NewRequestWithContext(ctx, http.MethodGet, endpoint, nil); if err != nil { continue }

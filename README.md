@@ -82,6 +82,10 @@ go build -o coredns .
 
 meshroute 对匹配 route 的 A/AAAA 查询直接写入选择结果；不匹配名称、非 A/AAAA 查询会继续交给下游插件。没有可用候选时默认 SERVFAIL，配置 fallback 后则返回备用 IP。
 
+当匹配路由没有任何有效指标样本、但仍有健康且未过期节点时，meshroute 会在这些节点中等概率随机选择，并在 CoreDNS 日志中记录 `no valid metric samples`。这属于无样本降级行为；一旦样本收敛，将恢复按评分选择。
+
+节点公网地址可用 `public_ip auto` 自动发现，或用 `public_ip <IPv4> [IPv6]` 固定。自动发现会依次请求 `api.ipify.org`、`ifconfig.me/ip` 和 `icanhazip.com`，结果随节点状态广播给其他节点；发现失败时保留路由中配置的候选 IP 并记录告警。
+
 ## 配置指令
 
 | 指令 | 必填 | 默认值 | 说明 |

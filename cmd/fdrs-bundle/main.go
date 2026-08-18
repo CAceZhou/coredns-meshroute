@@ -104,6 +104,7 @@ const corefileTemplate = `. {
         interval 5s
         timeout 15s
         probe_timeout 2s
+        public_ip auto
 
         weighted_route fdrs.solitarymc.top ipv4 node1=%[12]s,node2=%[13]s target_cidr=10.0.0.0/16 ports=25565,25566 target_weight=0.6 public_weight=0.4 select=min ttl=5
         weighted_route fdrs.solitarymc.top ipv6 node1=fdfe:dcba:9876::173,node2=fdfe:dcba:9876::174 target_cidr=10.0.0.0/16 ports=25565,25566 target_weight=0.6 public_weight=0.4 select=min ttl=5

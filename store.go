@@ -1,6 +1,9 @@
 package meshroute
 
 import (
+	"crypto/rand"
+	"math/big"
+	"net"
 	"sort"
 	"sync"
 	"time"
@@ -71,10 +74,34 @@ func (s *MemoryStore) Best(route Route, now time.Time, timeout time.Duration) (C
 			continue
 		}
 		if !found || better(score, bestScore, route.Selection) {
-			best, bestScore, found = candidate, score, true
+			best, bestScore, found = candidateWithStateIP(candidate, st, route.Family), score, true
+		} else if score == bestScore && candidate.NodeID < best.NodeID {
+			best = candidateWithStateIP(candidate, st, route.Family)
 		}
 	}
 	return best, bestScore, found
+}
+
+func (s *MemoryStore) RandomHealthy(route Route, now time.Time, timeout time.Duration) (Candidate, bool) {
+	s.mu.RLock()
+	defer s.mu.RUnlock()
+	candidates := append([]Candidate(nil), route.Candidates...)
+	available := make([]Candidate, 0, len(candidates))
+	for _, candidate := range candidates {
+		st, ok := s.states[candidate.NodeID]
+		if !ok || !st.Healthy || now.Sub(st.ReceivedAt) > timeout { continue }
+		available = append(available, candidateWithStateIP(candidate, st, route.Family))
+	}
+	if len(available) == 0 { return Candidate{}, false }
+	n, err := rand.Int(rand.Reader, big.NewInt(int64(len(available))))
+	if err != nil { return available[0], true }
+	return available[n.Int64()], true
+}
+
+func candidateWithStateIP(candidate Candidate, state NodeState, family int) Candidate {
+	if family == 4 && state.PublicIPv4 != "" { if ip := net.ParseIP(state.PublicIPv4); ip != nil { candidate.IP = ip } }
+	if family == 6 && state.PublicIPv6 != "" { if ip := net.ParseIP(state.PublicIPv6); ip != nil { candidate.IP = ip } }
+	return candidate
 }
 func better(a, b float64, selection Selection) bool {
 	if selection == SelectMax {

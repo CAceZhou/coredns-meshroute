@@ -73,8 +73,17 @@ func (m *MeshRoute) ServeDNS(ctx context.Context, w dns.ResponseWriter, r *dns.M
 			selected.Candidates = append(selected.Candidates, c)
 		}
 	}
-	candidate, _, ok := m.service.store.Best(selected, time.Now().UTC(), m.cfg.Timeout)
+	now := time.Now().UTC()
+	candidate, _, ok := m.service.store.Best(selected, now, m.cfg.Timeout)
 	ip := candidate.IP
+	if !ok {
+		if fallback, randomOK := m.service.store.RandomHealthy(selected, now, m.cfg.Timeout); randomOK {
+			candidate = fallback
+			ip = candidate.IP
+			log.Infof("route %s has no valid metric samples; selected healthy candidate %s by equal-probability random fallback", route.Domain, candidate.NodeID)
+			ok = true
+		}
+	}
 	if !ok {
 		ip = route.Fallback
 		if ip == nil || ((qtype == dns.TypeA) != (ip.To4() != nil)) {

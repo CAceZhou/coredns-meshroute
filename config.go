@@ -34,6 +34,9 @@ type Config struct {
 	Interval      time.Duration
 	Timeout       time.Duration
 	ProbeTimeout  time.Duration
+	PublicIPv4    net.IP
+	PublicIPv6    net.IP
+	PublicAuto    bool
 	Routes        []Route
 }
 
@@ -134,6 +137,20 @@ func parse(c *caddy.Controller) (Config, error) {
 					return cfg, e
 				}
 				cfg.ProbeTimeout = d
+			case "public_ip":
+				if len(args) < 1 || len(args) > 2 {
+					return cfg, c.ArgErr()
+				}
+				if args[0] == "auto" {
+					if len(args) != 1 { return cfg, fmt.Errorf("public_ip auto does not accept addresses") }
+					cfg.PublicAuto = true
+					break
+				}
+				for _, raw := range args {
+					ip := net.ParseIP(raw)
+					if ip == nil { return cfg, fmt.Errorf("invalid public IP %q", raw) }
+					if ip.To4() != nil { if cfg.PublicIPv4 != nil { return cfg, fmt.Errorf("duplicate public IPv4") }; cfg.PublicIPv4 = ip } else { if cfg.PublicIPv6 != nil { return cfg, fmt.Errorf("duplicate public IPv6") }; cfg.PublicIPv6 = ip }
+				}
 			case "route":
 				route, e := parseRouteArgs(args)
 				if e != nil {

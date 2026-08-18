@@ -79,6 +79,8 @@ type NodeState struct {
 	Version      uint64                 `json:"version"`
 	UpdatedAt    time.Time              `json:"updated_at"`
 	Healthy      bool                   `json:"healthy"`
+	PublicIPv4   string                 `json:"public_ipv4,omitempty"`
+	PublicIPv6   string                 `json:"public_ipv6,omitempty"`
 	Observations map[string]Observation `json:"observations"`
 	ReceivedAt   time.Time              `json:"-"`
 }

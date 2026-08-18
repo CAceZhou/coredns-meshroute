@@ -6,6 +6,8 @@ import (
 	"fmt"
 	"io"
 	"net/http"
+	"net"
+	"strings"
 	"sync"
 	"time"
 )
@@ -96,7 +98,30 @@ func (s *Service) publish(ctx context.Context) {
 	for _, route := range s.cfg.Routes {
 		observations[route.Key()] = s.observe(ctx, route)
 	}
-	s.store.SetLocal(NodeState{NodeID: s.cfg.NodeID, IP: s.cfg.NodeIP.String(), Version: s.version, UpdatedAt: time.Now().UTC(), Healthy: true, Observations: observations})
+	public4, public6 := s.publicIPs(ctx)
+	s.store.SetLocal(NodeState{NodeID: s.cfg.NodeID, IP: s.cfg.NodeIP.String(), PublicIPv4: public4, PublicIPv6: public6, Version: s.version, UpdatedAt: time.Now().UTC(), Healthy: true, Observations: observations})
+}
+
+func (s *Service) publicIPs(ctx context.Context) (string, string) {
+	if !s.cfg.PublicAuto { return ipString(s.cfg.PublicIPv4), ipString(s.cfg.PublicIPv6) }
+	return fetchPublicIP(ctx, 4), fetchPublicIP(ctx, 6)
+}
+
+func ipString(ip net.IP) string { if ip == nil { return "" }; return ip.String() }
+
+func fetchPublicIP(ctx context.Context, family int) string {
+	endpoints := []string{"https://api.ipify.org", "https://ifconfig.me/ip", "https://icanhazip.com"}
+	client := &http.Client{Timeout: 3 * time.Second}
+	for _, endpoint := range endpoints {
+		req, err := http.NewRequestWithContext(ctx, http.MethodGet, endpoint, nil); if err != nil { continue }
+		if family == 4 { req.Header.Set("User-Agent", "ddns-go/meshroute-ipv4") } else { req.Header.Set("User-Agent", "ddns-go/meshroute-ipv6") }
+		resp, err := client.Do(req); if err != nil { continue }
+		body, readErr := io.ReadAll(io.LimitReader(resp.Body, 128)); resp.Body.Close(); if readErr != nil || resp.StatusCode != http.StatusOK { continue }
+		value := strings.TrimSpace(string(body)); ip := net.ParseIP(value); if ip == nil || (family == 4 && ip.To4() == nil) || (family == 6 && (ip.To4() != nil || ip.To16() == nil)) { continue }
+		return ip.String()
+	}
+	log.Warningf("unable to discover public IPv%d address; retaining configured candidate IP", family)
+	return ""
 }
 func (s *Service) observe(ctx context.Context, route Route) Observation {
 	if route.Weighted != nil {
